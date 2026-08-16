@@ -1,0 +1,96 @@
+name: Build Deployment Artifact
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Release Artifact
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Verify application version
+        shell: bash
+        run: |
+          EXPECTED="version=${{ steps.version.outputs.version }}"
+
+          if ! grep -Fxq "$EXPECTED" app/version.txt; then
+            echo "app/version.txt does not contain:"
+            echo "$EXPECTED"
+            exit 1
+          fi
+
+      - name: Build deployment artifact
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARTIFACT="test-app-${VERSION}.tar.gz"
+
+          tar \
+            --create \
+            --gzip \
+            --file "$ARTIFACT" \
+            --directory app \
+            .
+
+          echo "Built artifact:"
+          ls -lh "$ARTIFACT"
+
+      - name: Validate artifact
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARTIFACT="test-app-${VERSION}.tar.gz"
+
+          echo "Archive contents:"
+          tar -tzvf "$ARTIFACT"
+
+          echo
+          echo "Testing archive:"
+          tar -tzf "$ARTIFACT" >/dev/null
+
+      - name: Generate SHA-256
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARTIFACT="test-app-${VERSION}.tar.gz"
+
+          sha256sum "$ARTIFACT" > "${ARTIFACT}.sha256"
+
+          echo "SHA-256:"
+          cat "${ARTIFACT}.sha256"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARTIFACT="test-app-${VERSION}.tar.gz"
+
+          gh release create "${GITHUB_REF_NAME}" \
+            "$ARTIFACT" \
+            "${ARTIFACT}.sha256" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes

@@ -1,0 +1,4 @@
+application=test-app
+version=1.0.0
+environment=deployment-engine-test
+purpose=deployment-engine-functional-test
