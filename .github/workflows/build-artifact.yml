@@ -17,7 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract version from tag
+      - name: Extract version
         id: version
         shell: bash
         run: |
@@ -30,21 +30,16 @@ jobs:
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Verify application version
-        shell: bash
-        run: |
-          EXPECTED="version=${{ steps.version.outputs.version }}"
-
-          if ! grep -Fxq "$EXPECTED" app/version.txt; then
-            echo "app/version.txt does not contain:"
-            echo "$EXPECTED"
-            exit 1
-          fi
-
-      - name: Build deployment artifact
+      - name: Build test-app
+        if: github.ref_name == 'v1.0.0' || github.ref_name == 'v1.1.0' || github.ref_name == 'v1.2.0' || github.ref_name == 'v1.3.0'
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+
+          EXPECTED="version=${VERSION}"
+
+          grep -Fxq "$EXPECTED" app/version.txt
+
           ARTIFACT="test-app-${VERSION}.tar.gz"
 
           tar \
@@ -54,32 +49,34 @@ jobs:
             --directory app \
             .
 
-          echo "Built artifact:"
-          ls -lh "$ARTIFACT"
+          sha256sum "$ARTIFACT" > "${ARTIFACT}.sha256"
 
-      - name: Validate artifact
+      - name: Build another-app
+        if: github.ref_name == 'v2.0.0'
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          ARTIFACT="test-app-${VERSION}.tar.gz"
 
-          echo "Archive contents:"
-          tar -tzvf "$ARTIFACT"
+          EXPECTED="version=${VERSION}"
 
-          echo
-          echo "Testing archive:"
-          tar -tzf "$ARTIFACT" >/dev/null
+          grep -Fxq "$EXPECTED" app2/version.txt
 
-      - name: Generate SHA-256
-        shell: bash
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          ARTIFACT="test-app-${VERSION}.tar.gz"
+          ARTIFACT="another-app-${VERSION}.tar.gz"
+
+          tar \
+            --create \
+            --gzip \
+            --file "$ARTIFACT" \
+            --directory app2 \
+            .
 
           sha256sum "$ARTIFACT" > "${ARTIFACT}.sha256"
 
-          echo "SHA-256:"
-          cat "${ARTIFACT}.sha256"
+      - name: Show artifacts
+        shell: bash
+        run: |
+          echo "Generated artifacts:"
+          ls -lh *.tar.gz *.sha256
 
       - name: Create GitHub Release
         env:
@@ -87,7 +84,12 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          ARTIFACT="test-app-${VERSION}.tar.gz"
+
+          if [[ "$VERSION" == "2.0.0" ]]; then
+            ARTIFACT="another-app-${VERSION}.tar.gz"
+          else
+            ARTIFACT="test-app-${VERSION}.tar.gz"
+          fi
 
           gh release create "${GITHUB_REF_NAME}" \
             "$ARTIFACT" \
