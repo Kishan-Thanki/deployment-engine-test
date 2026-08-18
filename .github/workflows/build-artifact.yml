@@ -30,44 +30,57 @@ jobs:
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Build test-app
-        if: github.ref_name == 'v1.0.0' || github.ref_name == 'v1.1.0' || github.ref_name == 'v1.2.0' || github.ref_name == 'v1.3.0'
+      - name: Determine application
+        id: application
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          MAJOR="${VERSION%%.*}"
+
+          case "$MAJOR" in
+            1)
+              APP_NAME="test-app"
+              APP_DIRECTORY="app"
+              ;;
+
+            2)
+              APP_NAME="another-app"
+              APP_DIRECTORY="app2"
+              ;;
+
+            *)
+              echo "Unsupported application major version: $MAJOR"
+              exit 1
+              ;;
+          esac
+
+          echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "app_directory=$APP_DIRECTORY" >> "$GITHUB_OUTPUT"
+
+      - name: Validate application version
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          APP_DIRECTORY="${{ steps.application.outputs.app_directory }}"
 
           EXPECTED="version=${VERSION}"
 
-          grep -Fxq "$EXPECTED" app/version.txt
+          grep -Fxq "$EXPECTED" "${APP_DIRECTORY}/version.txt"
 
-          ARTIFACT="test-app-${VERSION}.tar.gz"
+      - name: Build deployment artifact
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          APP_NAME="${{ steps.application.outputs.app_name }}"
+          APP_DIRECTORY="${{ steps.application.outputs.app_directory }}"
+
+          ARTIFACT="${APP_NAME}-${VERSION}.tar.gz"
 
           tar \
             --create \
             --gzip \
             --file "$ARTIFACT" \
-            --directory app \
-            .
-
-          sha256sum "$ARTIFACT" > "${ARTIFACT}.sha256"
-
-      - name: Build another-app
-        if: github.ref_name == 'v2.0.0'
-        shell: bash
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-
-          EXPECTED="version=${VERSION}"
-
-          grep -Fxq "$EXPECTED" app2/version.txt
-
-          ARTIFACT="another-app-${VERSION}.tar.gz"
-
-          tar \
-            --create \
-            --gzip \
-            --file "$ARTIFACT" \
-            --directory app2 \
+            --directory "$APP_DIRECTORY" \
             .
 
           sha256sum "$ARTIFACT" > "${ARTIFACT}.sha256"
@@ -78,18 +91,19 @@ jobs:
           echo "Generated artifacts:"
           ls -lh *.tar.gz *.sha256
 
+          echo
+          echo "Checksums:"
+          cat *.sha256
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          APP_NAME="${{ steps.application.outputs.app_name }}"
 
-          if [[ "$VERSION" == "2.0.0" || "$VERSION" == "2.1.0" ]]; then
-            ARTIFACT="another-app-${VERSION}.tar.gz"
-          else
-            ARTIFACT="test-app-${VERSION}.tar.gz"
-          fi
+          ARTIFACT="${APP_NAME}-${VERSION}.tar.gz"
 
           gh release create "${GITHUB_REF_NAME}" \
             "$ARTIFACT" \
