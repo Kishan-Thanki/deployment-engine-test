@@ -85,7 +85,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          if [[ "$VERSION" == "2.0.0" ]]; then
+          if [[ "$VERSION" == "2.0.0" || "$VERSION" == "2.1.0" ]]; then
             ARTIFACT="another-app-${VERSION}.tar.gz"
           else
             ARTIFACT="test-app-${VERSION}.tar.gz"
