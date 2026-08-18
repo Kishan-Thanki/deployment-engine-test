@@ -1,4 +1,0 @@
-application=another-app
-version=3.0.1
-environment=deployment-engine-test
-purpose=generic-deployment-test

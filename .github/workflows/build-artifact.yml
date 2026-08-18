@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 env:
-  APP_NAME: another-app
-  APP_DIRECTORY: app2
+  APP_NAME: deployment-test
+  APP_DIRECTORY: app
 
 jobs:
   build:
@@ -34,31 +34,25 @@ jobs:
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Validate application configuration
+      - name: Validate application
         shell: bash
         run: |
-          [[ -n "$APP_NAME" ]] ||
-            { echo "APP_NAME cannot be empty"; exit 1; }
+          VERSION="${{ steps.version.outputs.version }}"
 
           [[ -d "$APP_DIRECTORY" ]] ||
-            { echo "APP_DIRECTORY does not exist: $APP_DIRECTORY"; exit 1; }
+            { echo "Application directory does not exist: $APP_DIRECTORY"; exit 1; }
 
           [[ -f "$APP_DIRECTORY/version.txt" ]] ||
             { echo "Missing version file: $APP_DIRECTORY/version.txt"; exit 1; }
 
-      - name: Validate application version
-        shell: bash
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          EXPECTED="version=${VERSION}"
-
-          grep -Fxq "$EXPECTED" "${APP_DIRECTORY}/version.txt"
+          grep -Fxq \
+            "version=${VERSION}" \
+            "$APP_DIRECTORY/version.txt"
 
       - name: Build deployment artifact
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-
           ARTIFACT="${APP_NAME}-${VERSION}.tar.gz"
 
           tar \
@@ -68,20 +62,29 @@ jobs:
             --directory "$APP_DIRECTORY" \
             .
 
-          sha256sum "$ARTIFACT" > "${ARTIFACT}.sha256"
+          sha256sum "$ARTIFACT" \
+            > "${ARTIFACT}.sha256"
 
-      - name: Show artifacts
+      - name: Verify generated artifacts
         shell: bash
         run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          ARTIFACT="${APP_NAME}-${VERSION}.tar.gz"
+
+          [[ -f "$ARTIFACT" ]] ||
+            { echo "Missing artifact: $ARTIFACT"; exit 1; }
+
+          [[ -f "${ARTIFACT}.sha256" ]] ||
+            { echo "Missing checksum: ${ARTIFACT}.sha256"; exit 1; }
+
           echo "Generated artifacts:"
           ls -lh \
-            "${APP_NAME}-${{ steps.version.outputs.version }}.tar.gz" \
-            "${APP_NAME}-${{ steps.version.outputs.version }}.tar.gz.sha256"
+            "$ARTIFACT" \
+            "${ARTIFACT}.sha256"
 
           echo
           echo "Checksum:"
-          cat \
-            "${APP_NAME}-${{ steps.version.outputs.version }}.tar.gz.sha256"
+          cat "${ARTIFACT}.sha256"
 
       - name: Create GitHub Release
         env:
@@ -91,7 +94,8 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           ARTIFACT="${APP_NAME}-${VERSION}.tar.gz"
 
-          gh release create "${GITHUB_REF_NAME}" \
+          gh release create \
+            "${GITHUB_REF_NAME}" \
             "$ARTIFACT" \
             "${ARTIFACT}.sha256" \
             --title "${GITHUB_REF_NAME}" \
