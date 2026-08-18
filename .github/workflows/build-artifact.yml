@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+env:
+  APP_NAME: another-app
+  APP_DIRECTORY: app2
+
 jobs:
   build:
     name: Build Release Artifact
@@ -30,39 +34,22 @@ jobs:
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Determine application
-        id: application
+      - name: Validate application configuration
         shell: bash
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          MAJOR="${VERSION%%.*}"
+          [[ -n "$APP_NAME" ]] ||
+            { echo "APP_NAME cannot be empty"; exit 1; }
 
-          case "$MAJOR" in
-            1)
-              APP_NAME="test-app"
-              APP_DIRECTORY="app"
-              ;;
+          [[ -d "$APP_DIRECTORY" ]] ||
+            { echo "APP_DIRECTORY does not exist: $APP_DIRECTORY"; exit 1; }
 
-            2)
-              APP_NAME="another-app"
-              APP_DIRECTORY="app2"
-              ;;
-
-            *)
-              echo "Unsupported application major version: $MAJOR"
-              exit 1
-              ;;
-          esac
-
-          echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
-          echo "app_directory=$APP_DIRECTORY" >> "$GITHUB_OUTPUT"
+          [[ -f "$APP_DIRECTORY/version.txt" ]] ||
+            { echo "Missing version file: $APP_DIRECTORY/version.txt"; exit 1; }
 
       - name: Validate application version
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          APP_DIRECTORY="${{ steps.application.outputs.app_directory }}"
-
           EXPECTED="version=${VERSION}"
 
           grep -Fxq "$EXPECTED" "${APP_DIRECTORY}/version.txt"
@@ -71,8 +58,6 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          APP_NAME="${{ steps.application.outputs.app_name }}"
-          APP_DIRECTORY="${{ steps.application.outputs.app_directory }}"
 
           ARTIFACT="${APP_NAME}-${VERSION}.tar.gz"
 
@@ -89,11 +74,14 @@ jobs:
         shell: bash
         run: |
           echo "Generated artifacts:"
-          ls -lh *.tar.gz *.sha256
+          ls -lh \
+            "${APP_NAME}-${{ steps.version.outputs.version }}.tar.gz" \
+            "${APP_NAME}-${{ steps.version.outputs.version }}.tar.gz.sha256"
 
           echo
-          echo "Checksums:"
-          cat *.sha256
+          echo "Checksum:"
+          cat \
+            "${APP_NAME}-${{ steps.version.outputs.version }}.tar.gz.sha256"
 
       - name: Create GitHub Release
         env:
@@ -101,8 +89,6 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          APP_NAME="${{ steps.application.outputs.app_name }}"
-
           ARTIFACT="${APP_NAME}-${VERSION}.tar.gz"
 
           gh release create "${GITHUB_REF_NAME}" \
